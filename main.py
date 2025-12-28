@@ -73,6 +73,10 @@ async def get_budget_status(user_id: str, new_expense: float) -> str:
     return ""
 
 # --- MCP Tools ---
+@mcp.tool()
+async def ping(ctx: Context) -> str:
+    user_id = ctx.get_state("user_id")
+    return f"pong for {user_id}"
 
 @mcp.tool()
 async def add_transaction(
