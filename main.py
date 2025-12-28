@@ -15,24 +15,28 @@ load_dotenv()
 
 # --- Auth Logic: Token to UserID ---
 
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.exceptions import ToolError
+import hashlib
+
 def generate_user_id(auth_header: str) -> str:
-    """Creates a stable, unique User ID by hashing the secret token."""
     return hashlib.sha256(auth_header.encode()).hexdigest()[:16]
 
 class AuthMiddleware(Middleware):
-    async def on_call_tool(self, context: MiddlewareContext, call_next):
-        headers = get_http_headers()
-        auth_header = headers.get("authorization")
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # This runs for initialize, tools/list, tools/call, etc.
+        headers = get_http_headers()  # safe here for HTTP transports
+        auth_header = headers.get("authorization", "")
 
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if not auth_header.startswith("Bearer "):
             raise ToolError("Unauthorized: Please provide a Bearer Token in your config.")
 
-        # Generate a unique ID based on their specific token
         user_id = generate_user_id(auth_header)
-        
-        # Save it in the context state for the tools to use
+
+        # Store in FastMCP context state so tools can read it
         context.fastmcp_context.set_state("user_id", user_id)
-        
+
         return await call_next(context)
 
 # --- Initialize Server and Supabase ---
