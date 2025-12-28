@@ -1,0 +1,84 @@
+{
+    "travel": [
+      "cab_office_to_pg",
+      "cab_pg_to_office",
+      "metro_pg_to_home",
+      "metro_home_to_pg",
+      "parking",
+      "tolls",
+      "other_travel"
+    ],
+    "living": [
+      "house_rent",
+      "hall_mess_bill",
+      "electricity_bill",
+      "security_deposit",
+      "dhobi_laundry",
+      "maid_service",
+      "furnishing",
+      "gas_cylinder",
+      "wifi_internet",
+      "mobile_recharge",
+      "other_living"
+    ],
+    "food": [
+      "breakfast",
+      "lunch",
+      "dinner",
+      "gym_essentials",
+      "groceries",
+      "fruits",
+      "juice",
+      "dairy_bakery",
+      "dining_out",
+      "coffee_tea",
+      "snacks",
+      "delivery_fees",
+      "other_food"
+    ],
+    "health": [
+      "medicines",
+      "doctor_consultation",
+      "diagnostics_labs",
+      "health_insurance",
+      "fitness_gym",
+      "other_health"
+    ],
+    "shopping": [
+      "clothing",
+      "footwear",
+      "accessories",
+      "electronics_gadgets",
+      "appliances",
+      "home_decor",
+      "other_shopping"
+    ],
+    "entertainment": [
+      "movies",
+      "clubbing_party",
+      "trips_vacation",
+      "outings",
+      "subscriptions_ott_music",
+      "other_entertainment",
+      "birthday_party"
+    ],
+    "investments": [
+      "mutual_funds",
+      "stocks",
+      "fd_rd",
+      "gold",
+      "crypto",
+      "brokerage_fees",
+      "other_investments"
+    ],
+    "family": [
+      "mumma",
+      "papa",
+      "sister",
+      "house_related_expenses",
+      "other_family"
+    ],
+    "other": [
+      "miscellaneous"
+    ]
+  }
