@@ -1,20 +1,49 @@
 import os
 import json
+import hashlib
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from fastmcp import FastMCP
+
+from fastmcp import FastMCP, Context
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.dependencies import get_http_headers
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# initialize FastMCP and Supabase
-mcp = FastMCP("Expense-Tracker Server")
+# --- Auth Logic: Token to UserID ---
+
+def generate_user_id(auth_header: str) -> str:
+    """Creates a stable, unique User ID by hashing the secret token."""
+    return hashlib.sha256(auth_header.encode()).hexdigest()[:16]
+
+class AuthMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        headers = get_http_headers()
+        auth_header = headers.get("authorization")
+
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise ToolError("Unauthorized: Please provide a Bearer Token in your config.")
+
+        # Generate a unique ID based on their specific token
+        user_id = generate_user_id(auth_header)
+        
+        # Save it in the context state for the tools to use
+        context.fastmcp_context.set_state("user_id", user_id)
+        
+        return await call_next(context)
+
+# --- Initialize Server and Supabase ---
+
+# Initialize FastMCP with the Auth Middleware
+mcp = FastMCP("Expense-Tracker Server", middleware=[AuthMiddleware()])
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
-# helper function
+# --- Helper Function (Internal) ---
 
 async def get_budget_status(user_id: str, new_expense: float) -> str:
     """Checks budget against current month's spending."""
@@ -43,11 +72,11 @@ async def get_budget_status(user_id: str, new_expense: float) -> str:
         return f"Budget Exceeded by {abs(remaining):.2f}!"
     return ""
 
-# MCP tools
+# --- MCP Tools ---
 
 @mcp.tool()
 async def add_transaction(
-    user_id: str, 
+    ctx: Context,
     amount: float, 
     category: str, 
     subcategory: str = "", 
@@ -55,7 +84,9 @@ async def add_transaction(
     date: str = None, 
     is_credit: bool = False
 ) -> str:
-    """Add a new transaction. Requires user_id for auth."""
+    """Add a new transaction. (Auth handled automatically)"""
+    user_id = ctx.get_state("user_id")
+
     if not date:
         date = datetime.now().strftime('%Y-%m-%d')
     
@@ -82,13 +113,15 @@ async def add_transaction(
 
 @mcp.tool()
 async def list_expenses(
-    user_id: str,
+    ctx: Context,
     start_date: Optional[str] = None, 
     end_date: Optional[str] = None, 
     category: Optional[str] = None,
     limit: int = 50
 ) -> Any:
-    """List transactions with optional filters for a specific user."""
+    """List transactions with optional filters for the authenticated user."""
+    user_id = ctx.get_state("user_id")
+
     query = supabase.table("transactions").select("*").eq("user_id", user_id)
     
     if start_date:
@@ -104,11 +137,13 @@ async def list_expenses(
 
 @mcp.tool()
 async def get_summary(
-    user_id: str,
+    ctx: Context,
     start_date: Optional[str] = None, 
     end_date: Optional[str] = None
 ) -> Dict[str, float]:
-    """Get total spending and credits for a specific user within a period."""
+    """Get total spending and credits for the authenticated user within a period."""
+    user_id = ctx.get_state("user_id")
+
     query = supabase.table("transactions").select("type, amount").eq("user_id", user_id)
     
     if start_date:
@@ -136,15 +171,17 @@ async def get_summary(
 
 @mcp.tool()
 async def search_transactions(
-    user_id: str, 
+    ctx: Context,
     date: str, 
     amount: float, 
     category: str
 ) -> str:
     """
-    Search for transactions for a specific user to get their IDs. 
+    Search for transactions for the authenticated user to get their IDs. 
     Use this before updating or deleting to find the correct record.
     """
+    user_id = ctx.get_state("user_id")
+
     # Query Supabase with user_id filter for security
     res = supabase.table("transactions") \
         .select("id, date, amount, category, subcategory, note") \
@@ -168,11 +205,13 @@ async def search_transactions(
 
 @mcp.tool()
 async def update_transaction_by_id(
-    user_id: str, 
+    ctx: Context,
     t_id: int, 
     new_amount: Optional[float] = None
 ) -> str:
-    """Update a specific transaction using the ID found from search. Requires user_id."""
+    """Update a specific transaction using the ID found from search. (Auth handled automatically)"""
+    user_id = ctx.get_state("user_id")
+
     if new_amount is None:
         return "Nothing to update."
 
@@ -188,8 +227,10 @@ async def update_transaction_by_id(
     return "Transaction not found or unauthorized."
 
 @mcp.tool()
-async def delete_transaction_by_id(user_id: str, t_id: int) -> str:
-    """Delete a specific transaction using the ID found from search. Requires user_id."""
+async def delete_transaction_by_id(ctx: Context, t_id: int) -> str:
+    """Delete a specific transaction using the ID found from search. (Auth handled automatically)"""
+    user_id = ctx.get_state("user_id")
+
     # Delete call with double filter (id AND user_id)
     res = supabase.table("transactions") \
         .delete() \
@@ -203,11 +244,13 @@ async def delete_transaction_by_id(user_id: str, t_id: int) -> str:
     return "Transaction not found or unauthorized."
 
 @mcp.tool()
-async def set_budget(user_id: str, amount: float) -> str:
-    """Set or update the monthly budget for a user."""
+async def set_budget(ctx: Context, amount: float) -> str:
+    """Set or update the monthly budget for the authenticated user."""
+    user_id = ctx.get_state("user_id")
+
     data = {"user_id": user_id, "total_budget": amount}
     supabase.table("settings").upsert(data).execute()
-    return f"Budget updated to {amount} for user {user_id}."
+    return f"Budget updated to {amount}."
 
 @mcp.resource("config://categories", mime_type="application/json")
 async def get_categories() -> str:
@@ -215,16 +258,9 @@ async def get_categories() -> str:
     try:
         default_categories = {
             "categories": [
-                "Food & Dining",
-                "Transportation",
-                "Shopping",
-                "Entertainment",
-                "Bills & Utilities",
-                "Healthcare",
-                "Travel",
-                "Education",
-                "Business",
-                "Other"
+                "Food & Dining", "Transportation", "Shopping", "Entertainment",
+                "Bills & Utilities", "Healthcare", "Travel", "Education",
+                "Business", "Other"
             ]
         }
         try:
